@@ -18,7 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "LoRa.h"
+#include <stdio.h>
+#include "SX1278.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -45,7 +46,7 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim1;
 
 /* USER CODE BEGIN PV */
-LoRa myLoRa;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -138,7 +139,13 @@ uint8_t DHT11_Read (void)
 }
 
 /* USER CODE END 0 */
+SX1278_hw_t SX1278_hw;
+SX1278_t SX1278;
 
+int master = 0;
+int ret;
+
+char buffer[16];
 /**
   * @brief  The application entry point.
   * @retval int
@@ -172,51 +179,80 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim1);
   /* USER CODE END 2 */
-    uint8_t Txbuff[8];
+  //initialize LoRa module
+  SX1278_hw.dio0.port = DIO0_GPIO_Port;
+  SX1278_hw.dio0.pin = DIO0_Pin;
+  SX1278_hw.nss.port = NSS_GPIO_Port;
+  SX1278_hw.nss.pin = NSS_Pin;
+  SX1278_hw.reset.port = RST_GPIO_Port;
+  SX1278_hw.reset.pin = RST_Pin;
+  SX1278_hw.spi = &hspi1;
 
-	myLoRa = newLoRa();
+  SX1278.hw = &SX1278_hw;
 
-	myLoRa.CS_port         = NSS_GPIO_Port;
-	myLoRa.CS_pin          = NSS_Pin;
-	myLoRa.reset_port      = RST_GPIO_Port;
-	myLoRa.reset_pin       = RST_Pin;
-	myLoRa.DIO0_port       = DIO0_GPIO_Port;
-	myLoRa.DIO0_pin        = DIO0_Pin;
-	myLoRa.hSPIx           = &hspi1;
+  printf("Configuring LoRa module\r\n");
+  SX1278_init(&SX1278, 434000000, SX1278_POWER_17DBM, SX1278_LORA_SF_7,
+  SX1278_LORA_BW_125KHZ, SX1278_LORA_CR_4_5, SX1278_LORA_CRC_EN, 10);
+  printf("Done configuring LoRaModule\r\n");
 
+	if (master == 1) {
+		ret = SX1278_LoRaEntryTx(&SX1278, 16, 2000);
+		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+	} else {
+		ret = SX1278_LoRaEntryRx(&SX1278, 16, 2000);
+		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+	}
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   while (1)
   {
-	  DHT11_Start();
-	  temp = Check_Response();
-	  hum_byte1 = DHT11_Read();
-	  hum_byte2 = DHT11_Read();
-	  temp_byte1 = DHT11_Read();
-	  temp_byte2 = DHT11_Read();
+//	  DHT11_Start();
+//	  temp = Check_Response();
+//	  hum_byte1 = DHT11_Read();
+//	  hum_byte2 = DHT11_Read();
+//	  temp_byte1 = DHT11_Read();
+//	  temp_byte2 = DHT11_Read();
+//
+//	  HAL_Delay(2000);
+//
+//	  buffer[0]=hum_byte1;
 
 
-	  //=======Debug=======
-	  temperature = (float) temp_byte1;
-	  humidity = (float) hum_byte1;
-	  //===================
-	  /*
-	    200: LORA_OK - Everything is OK.
-	    404: LORA_NOT_FOUND - Your microcontroller can't communicate with the LoRa module and
-	 						  read the RegVersion.
-	    503: LORA_UNAVAILABLE - Something in LoRa 's settings (i.e. NSS port/pin,
-	 							RESET port/pin or SPI handler) is not correct.
-	    */
-	  if(LoRa_init(&myLoRa)==LORA_OK)
-	  {
-		  Txbuff[0] = hum_byte1;
-		  Txbuff[1] = hum_byte2;
-		  Txbuff[2] = temp_byte1;
-		  Txbuff[3] = temp_byte2;
+	  if (master == 1) {
+		printf("Master ...\r\n");
+		HAL_Delay(1000);
+		printf("Sending package...\r\n");
 
-		  LoRa_transmit(&myLoRa, Txbuff , 4, 500);
-	  }
+		ret = SX1278_LoRaEntryTx(&SX1278, 16, 2000);
+		printf("Entry: %d\r\n", ret);
 
+		printf("Sending %s\r\n", buffer);
+		ret = SX1278_LoRaTxPacket(&SX1278, (uint8_t*) buffer,16, 2000);
+
+
+		printf("Transmission: %d\r\n", ret);
+		printf("Package sent...\r\n");
+
+	  } else {
+		printf("Slave ...\r\n");
+		HAL_Delay(800);
+		printf("Receiving package...\r\n");
+
+		ret = SX1278_LoRaRxPacket(&SX1278);
+		printf("Received: %d\r\n", ret);
+		if (ret > 0) {
+			if(SX1278_read(&SX1278, (uint8_t*) buffer, ret)>0){
+				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+				HAL_Delay(1000);
+				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+				HAL_Delay(1000);
+			}
+
+		}
+		printf("Package received ...\r\n");
+
+	}
   }
     /* USER CODE END WHILE */
 
@@ -360,33 +396,47 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET );
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, NSS_Pin|RST_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PA2 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(NSS_GPIO_Port, NSS_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(RST_GPIO_Port, RST_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin : LED_Pin */
+  GPIO_InitStruct.Pin = LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA1 NSS_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|NSS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : NSS_Pin RST_Pin */
-  GPIO_InitStruct.Pin = NSS_Pin|RST_Pin;
+  /*Configure GPIO pin : RST_Pin */
+  GPIO_InitStruct.Pin = RST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(RST_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : DIO0_Pin */
   GPIO_InitStruct.Pin = DIO0_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(DIO0_GPIO_Port, &GPIO_InitStruct);
 
