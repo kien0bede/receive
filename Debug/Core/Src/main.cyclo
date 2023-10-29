@@ -4,7 +4,7 @@
 ../Core/Src/main.c:97:6:DHT11_Start	1
 ../Core/Src/main.c:107:9:Check_Response	4
 ../Core/Src/main.c:123:9:DHT11_Read	5
-../Core/Src/main.c:153:5:main	5
+../Core/Src/main.c:153:5:main	6
 ../Core/Src/main.c:268:6:SystemClock_Config	3
 ../Core/Src/main.c:308:13:MX_SPI1_Init	2
 ../Core/Src/main.c:346:13:MX_TIM1_Init	4

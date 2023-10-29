@@ -220,37 +220,37 @@ int main(void)
 
 
 	  if (master == 1) {
-		printf("Master ...\r\n");
+
 		HAL_Delay(1000);
-		printf("Sending package...\r\n");
+
 
 		ret = SX1278_LoRaEntryTx(&SX1278, 16, 2000);
-		printf("Entry: %d\r\n", ret);
 
-		printf("Sending %s\r\n", buffer);
 		ret = SX1278_LoRaTxPacket(&SX1278, (uint8_t*) buffer,16, 2000);
-
-
-		printf("Transmission: %d\r\n", ret);
-		printf("Package sent...\r\n");
+		if(ret)
+		{
+			HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+			HAL_Delay(500);
+			HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+			HAL_Delay(500);
+		}
 
 	  } else {
-		printf("Slave ...\r\n");
-		HAL_Delay(800);
-		printf("Receiving package...\r\n");
+
+		HAL_Delay(1000);
+
 
 		ret = SX1278_LoRaRxPacket(&SX1278);
-		printf("Received: %d\r\n", ret);
+
 		if (ret > 0) {
 			if(SX1278_read(&SX1278, (uint8_t*) buffer, ret)>0){
+				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+				HAL_Delay(500);
 				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
-				HAL_Delay(1000);
-				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
-				HAL_Delay(1000);
+				HAL_Delay(500);
 			}
 
 		}
-		printf("Package received ...\r\n");
 
 	}
   }
