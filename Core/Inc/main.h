@@ -65,6 +65,8 @@ void Error_Handler(void);
 #define RST_GPIO_Port GPIOB
 #define DIO0_Pin GPIO_PIN_1
 #define DIO0_GPIO_Port GPIOB
+#define Flame_Pin GPIO_PIN_3
+#define Flame_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

@@ -18,11 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
-#include "SX1278.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "SX1278_hw.h"
+#include "SX1278.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +41,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim1;
@@ -54,98 +56,22 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void delay (uint16_t us)
-{
-	__HAL_TIM_SET_COUNTER(&htim1,0);  // set the counter value a 0
-	while (__HAL_TIM_GET_COUNTER(&htim1) < us);  // wait for the counter to reach the us input in the parameter
-}
-
-uint8_t temp_byte1, temp_byte2 , hum_byte1, hum_byte2;
-
-float temperature,humidity;
-
-uint8_t temp;
-
-void Set_Pin_Output(GPIO_TypeDef *GPIOx ,uint16_t GPIO_Pin)
-{
-	GPIO_InitTypeDef GPIO_InitStruct ={0};
-	GPIO_InitStruct.Pin = GPIO_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
-}
-
-void Set_Pin_Input(GPIO_TypeDef *GPIOx ,uint16_t GPIO_Pin)
-{
-	GPIO_InitTypeDef GPIO_InitStruct ={0};
-	GPIO_InitStruct.Pin = GPIO_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
-}
-
-/*DHT11*/
-#define DHT11_PORT GPIOA
-#define DHT11_PIN GPIO_PIN_1
-
-void DHT11_Start (void)
-{
-	Set_Pin_Output (DHT11_PORT, DHT11_PIN);  // set the pin as output
-	HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, 0);   // pull the pin low
-	delay (18000);   // wait for 18ms
-	HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, 1);   // pull the pin high
-	delay (20);   // wait for 20micros
-	Set_Pin_Input(DHT11_PORT, DHT11_PIN);    // set as input
-}
-
-uint8_t Check_Response (void)
-{
-	uint8_t Response = 0;
-	delay (40);
-	if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))
-	{
-		delay (80);
-		if ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN))) Response = 1;
-		else Response = -1;
-
-	}
-	while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));   // wait for the pin to go low
-
-	return Response;
-}
-
-uint8_t DHT11_Read (void)
-{
-	uint8_t i,j;
-	for (j=0;j<8;j++)
-	{
-		while (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));   // wait for the pin to go high
-		delay (40);   // wait for 40 us
-		if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))   // if the pin is low
-		{
-			i&= ~(1<<(7-j));   // write 0
-		}
-		else i|= (1<<(7-j));  // if the pin is high, write 1
-		while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));  // wait for the pin to go low
-	}
-
-	return i;
-}
-
-/* USER CODE END 0 */
 SX1278_hw_t SX1278_hw;
 SX1278_t SX1278;
 
-int master = 0;
+int master = 1;
 int ret;
+char buffer[16]="abcdef1234567890";
+uint16_t MQ2;
+/* USER CODE END 0 */
 
-char buffer[16];
 /**
   * @brief  The application entry point.
   * @retval int
@@ -176,48 +102,46 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM1_Init();
   MX_SPI1_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim1);
-  /* USER CODE END 2 */
+
   //initialize LoRa module
-  SX1278_hw.dio0.port = DIO0_GPIO_Port;
-  SX1278_hw.dio0.pin = DIO0_Pin;
-  SX1278_hw.nss.port = NSS_GPIO_Port;
-  SX1278_hw.nss.pin = NSS_Pin;
-  SX1278_hw.reset.port = RST_GPIO_Port;
-  SX1278_hw.reset.pin = RST_Pin;
-  SX1278_hw.spi = &hspi1;
+   SX1278_hw.dio0.port = DIO0_GPIO_Port;
+   SX1278_hw.dio0.pin = DIO0_Pin;
+   SX1278_hw.nss.port = NSS_GPIO_Port;
+   SX1278_hw.nss.pin = NSS_Pin;
+   SX1278_hw.reset.port = RST_GPIO_Port;
+   SX1278_hw.reset.pin = RST_Pin;
+   SX1278_hw.spi = &hspi1;
 
-  SX1278.hw = &SX1278_hw;
+   SX1278.hw = &SX1278_hw;
 
-  printf("Configuring LoRa module\r\n");
-  SX1278_init(&SX1278, 434000000, SX1278_POWER_17DBM, SX1278_LORA_SF_7,
-  SX1278_LORA_BW_125KHZ, SX1278_LORA_CR_4_5, SX1278_LORA_CRC_EN, 10);
-  printf("Done configuring LoRaModule\r\n");
+   SX1278_init(&SX1278, 434000000, SX1278_POWER_17DBM, SX1278_LORA_SF_7,
+   SX1278_LORA_BW_125KHZ, SX1278_LORA_CR_4_5, SX1278_LORA_CRC_EN, 10);
 
-	if (master == 1) {
-		ret = SX1278_LoRaEntryTx(&SX1278, 16, 2000);
-		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
-	} else {
-		ret = SX1278_LoRaEntryRx(&SX1278, 16, 2000);
-		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
-	}
+ 	if (master == 1) {
+ 		ret = SX1278_LoRaEntryTx(&SX1278, 16, 2000);
+ 		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+ 	} else {
+ 		ret = SX1278_LoRaEntryRx(&SX1278, 16, 2000);
+ 		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+ 	}
+  /* USER CODE END 2 */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
   while (1)
   {
-//	  DHT11_Start();
-//	  temp = Check_Response();
-//	  hum_byte1 = DHT11_Read();
-//	  hum_byte2 = DHT11_Read();
-//	  temp_byte1 = DHT11_Read();
-//	  temp_byte2 = DHT11_Read();
-//
-//	  HAL_Delay(2000);
-//
-//	  buffer[0]=hum_byte1;
+	  HAL_ADC_Start(&hadc1);
+	  HAL_Delay(20);
+	  MQ2 = HAL_ADC_GetValue(&hadc1);
+	  HAL_ADC_Stop(&hadc1);
 
+	  buffer[0]= (uint8_t)MQ2 ;
+	  buffer[1]= (uint8_t)(MQ2>>8) ;
+	  buffer[2]= HAL_GPIO_ReadPin(GPIOB, Flame_Pin);
 
 	  if (master == 1) {
 
@@ -269,6 +193,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -298,6 +223,59 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -402,10 +380,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET );
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(NSS_GPIO_Port, NSS_Pin, GPIO_PIN_SET);
@@ -420,12 +395,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PA1 NSS_Pin */
-  GPIO_InitStruct.Pin = GPIO_PIN_1|NSS_Pin;
+  /*Configure GPIO pin : NSS_Pin */
+  GPIO_InitStruct.Pin = NSS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  HAL_GPIO_Init(NSS_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : RST_Pin */
   GPIO_InitStruct.Pin = RST_Pin;
@@ -434,11 +409,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(RST_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : DIO0_Pin */
-  GPIO_InitStruct.Pin = DIO0_Pin;
+  /*Configure GPIO pins : DIO0_Pin Flame_Pin */
+  GPIO_InitStruct.Pin = DIO0_Pin|Flame_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(DIO0_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
